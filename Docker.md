@@ -851,7 +851,323 @@ BUILDING.txt  CONTRIBUTING.md  LICENSE	NOTICE	README.md  RELEASE-NOTES  RUNNING.
 cp -r ./webapps.dist/* ./webapps
 ```
 
+# docker镜像
 
+
+## commit镜像
+
+```shell
+docker commit 提交容器成为一个新的版本
+# 命令和git原理类似
+docker commit -m="提交的信息描述" -a="作者" 容器id 目标镜像名:[TAG]
+------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ ~]# docker commit --help
+
+Usage:	docker commit [OPTIONS] CONTAINER [REPOSITORY[:TAG]]
+
+Create a new image from a container's changes
+
+Options:
+  -a, --author string    Author (e.g., "John Hannibal Smith <hannibal@a-team.com>")
+  -c, --change list      Apply Dockerfile instruction to the created image
+  -m, --message string   Commit message
+  -p, --pause            Pause container during commit (default true)
+------------------------------------------------------------
+docker commit -a="lwb" -m"add webapps application" 14d99b632fe5 tomcat02:1.0
+------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ ~]# docker images
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+tomcat02            1.0                 cd7437aab119        6 seconds ago       654MB
+------------------------------------------------------------
+# 以后可以直接使用修改过的镜像来操作
+
+```
+
+学习方式说明：理解概念，但是一定要实践，最后实践和理论相结合一次搞定这个知识。
+
+```shell
+# 如果你想保存当前容器的状态，就可以通过commit来提交，获得一个镜像
+# 类似于虚拟机的快照
+```
+
+# 容器数据卷
+
+## 什么是容器数据卷
+
+docker就是将应用和环境打包成一个镜像
+
+如果数据都在容器中，容器删除后数据就会丢失。
+
+**数据持久化** MySQL的数据可以存储在本地
+
+docker容器产生的数据，同步到本地。这就是卷技术
+
+将我们的容器目录挂载到Linux上面！
+
+总结：容器的持久化和同步操作！容器间也是可以数据共享的。
+
+## 使用数据卷
+
+> 方式一：直接使用命令挂载 -v
+
+```shell
+docker run -it -v 主机目录：容器目录 
+docker run -it -v /home/test:/home centos /bin/bash
+----------------------------------------------------------------
+"Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/home/test",
+                "Destination": "/home",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            }
+        ],
+----------------------------------------------------------------
+[root@90fda77c5cb6 home]# touch 1.txt
+[root@90fda77c5cb6 home]# ls
+1.txt
+----------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ test]# ls
+1.txt
+[root@iZ8vbdsaostzztcixyun1sZ test]# 
+----------------------------------------------------------------
+# 停止容器，在宿主机上修改文件，依然可以同步到容器中
+```
+
+- 好处：以后修改直接在宿主机上修改即可，容器会自动同步
+
+## MySQL实战
+
+思考：MySQL的数据持久化问题
+
+```shell
+# 启动mysql需要配置密码的
+docker run -d -p 3310:3306 -v /home/mysql/conf:/etc/mysql/conf.d -v /home/mysql/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=654321 --name mysql01 mysql:5.7
+# -d 后台运行
+# -p 端口映射
+# -v 数据卷挂载
+# -e 环境配置
+## --name 容器名字
+```
+
+## 具名挂载和匿名挂载
+
+```shell
+# 匿名挂载
+-v 容器挂载
+docker run -d -P --name nginx01 -v /etc/nginx nginx
+[root@iZ8vbdsaostzztcixyun1sZ data]# docker volume --help
+----------------------------------------------------------------
+Usage:	docker volume COMMAND
+
+Manage volumes
+
+Commands:
+  create      Create a volume
+  inspect     Display detailed information on one or more volumes
+  ls          List volumes
+  prune       Remove all unused local volumes
+  rm          Remove one or more volumes
+
+Run 'docker volume COMMAND --help' for more information on a command.
+----------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ data]# docker volume ls
+DRIVER              VOLUME NAME
+local               b61fcc815032209cf2a3f1127a86a2655c156a7031eb3d56b87e3263931a8689
+----------------------------------------------------------------
+docker volume ls # 查看所有卷的情况
+# 匿名挂载，使用-v的时候只指定了容器内的路径没有指定宿主机的路径
+----------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ data]# docker run -d -P --name nignx03 -v juming-nginx:/etc/nginx nginx
+7b16cc1da8ea02106cb827d4d6ecceb7114b3922c7df4fb868c330011bd18c67
+[root@iZ8vbdsaostzztcixyun1sZ data]# docker volume ls
+DRIVER              VOLUME NAME
+local               b61fcc815032209cf2a3f1127a86a2655c156a7031eb3d56b87e3263931a8689
+local               juming-nginx
+----------------------------------------------------------------
+# 具名挂载 通过-v 卷名:容器内路径
+# 查看一下 docker volume inspect
+[root@iZ8vbdsaostzztcixyun1sZ data]# docker volume inspect juming-nginx
+[
+    {
+        "CreatedAt": "2020-12-03T21:02:03+08:00",
+        "Driver": "local",
+        "Labels": null,
+        "Mountpoint": "/var/lib/docker/volumes/juming-nginx/_data",
+        "Name": "juming-nginx",
+        "Options": null,
+        "Scope": "local"
+    }
+]
+----------------------------------------------------------------
+# 所有的docker容器内的卷，没有指定目录的情况下都是在 /var/lib/docker/volumes/xxxxx/_data
+# 我们可以通过具名挂载很方便的找到一个卷，大多数情况下都是使用具名挂载
+```
+
+## 如何确定是具名挂载还是匿名挂载
+
+```shell
+-v 容器内的路径 # 匿名挂载
+-v 卷名:容器内的路径 # 具名挂载
+-v /宿主机路径:容器内的路径 # 指定路径挂载
+```
+
+## 拓展
+
+```shell
+docker run -d -P --name nginx02 -v juming-nginx:/etc/nginx:ro nginx
+docker run -d -P --name nginx02 -v juming-nginx:/etc/nginx:rw nginx
+# 通过-v 容器内路径:ro/rw 改变读写权限
+# ro read only 只读
+# rw read write 可读可写
+# 一旦设定了这个容器的权限 容器对挂载出来的内容就有限定了
+# ro 说明这个路径只能通过宿主机来改变，容器内部是无法操作的
+```
+
+## 初识DockerFile
+
+DockerFile 就是用来构建docker镜像的文件，就是一段命令脚本。
+
+通过这个脚本可以生成镜像，镜像是一层一层的。
+
+> 方式二：
+
+```shell
+FROM centos
+
+VOLUME ["volueme01","volume02"]
+
+CMD echo "-------end volume success-------------"
+CMD /bin/bash
+----------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ docker-test-volume]# docker build --help
+
+Usage:	docker build [OPTIONS] PATH | URL | -
+
+Build an image from a Dockerfile
+
+Options:
+      --add-host list           Add a custom host-to-IP mapping (host:ip)
+      --build-arg list          Set build-time variables
+      --cache-from strings      Images to consider as cache sources
+      --cgroup-parent string    Optional parent cgroup for the container
+      --compress                Compress the build context using gzip
+      --cpu-period int          Limit the CPU CFS (Completely Fair Scheduler) period
+      --cpu-quota int           Limit the CPU CFS (Completely Fair Scheduler) quota
+  -c, --cpu-shares int          CPU shares (relative weight)
+      --cpuset-cpus string      CPUs in which to allow execution (0-3, 0,1)
+      --cpuset-mems string      MEMs in which to allow execution (0-3, 0,1)
+      --disable-content-trust   Skip image verification (default true)
+  -f, --file string             Name of the Dockerfile (Default is 'PATH/Dockerfile')
+      --force-rm                Always remove intermediate containers
+      --iidfile string          Write the image ID to the file
+      --isolation string        Container isolation technology
+      --label list              Set metadata for an image
+  -m, --memory bytes            Memory limit
+      --memory-swap bytes       Swap limit equal to memory plus swap: '-1' to enable unlimited swap
+      --network string          Set the networking mode for the RUN instructions during build (default "default")
+      --no-cache                Do not use cache when building the image
+  -o, --output stringArray      Output destination (format: type=local,dest=path)
+      --platform string         Set platform if server is multi-platform capable
+      --progress string         Set type of progress output (auto, plain, tty). Use plain to show container output (default "auto")
+      --pull                    Always attempt to pull a newer version of the image
+  -q, --quiet                   Suppress the build output and print image ID on success
+      --rm                      Remove intermediate containers after a successful build (default true)
+      --secret stringArray      Secret file to expose to the build (only if BuildKit enabled): id=mysecret,src=/local/secret
+      --security-opt strings    Security options
+      --shm-size bytes          Size of /dev/shm
+      --squash                  Squash newly built layers into a single new layer
+      --ssh stringArray         SSH agent socket or keys to expose to the build (only if BuildKit enabled) (format: default|<id>[=<socket>|<key>[,<key>]])
+      --stream                  Stream attaches to server to negotiate build context
+  -t, --tag list                Name and optionally a tag in the 'name:tag' format
+      --target string           Set the target build stage to build.
+      --ulimit ulimit           Ulimit options (default [])
+----------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ docker-test-volume]# docker build -f ./dockerfile1 -t lwb/centos .
+Sending build context to Docker daemon  2.048kB
+Step 1/4 : FROM centos
+ ---> 0d120b6ccaa8
+Step 2/4 : VOLUME ["volueme01","volume02"]
+ ---> Running in 3824e5d2898b
+Removing intermediate container 3824e5d2898b
+ ---> 0478cb2167c9
+Step 3/4 : CMD echo "-------end volume success-------------"
+ ---> Running in 4d7c2eb09560
+Removing intermediate container 4d7c2eb09560
+ ---> 76a850ab78ed
+Step 4/4 : CMD /bin/bash
+ ---> Running in 043e49f85508
+Removing intermediate container 043e49f85508
+ ---> 19e9adbd4644
+Successfully built 19e9adbd4644
+Successfully tagged lwb/centos:latest
+----------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ docker-test-volume]# docker images
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+lwb/centos          latest              19e9adbd4644        38 seconds ago      215MB
+----------------------------------------------------------------
+# 启动自己构建的镜像 volueme01  volume02是生成镜像的时候自动挂载的,数据卷目录
+# 这个卷一定是和外部有一个同步的目录的。匿名挂载
+[root@iZ8vbdsaostzztcixyun1sZ docker-test-volume]# docker run -it 19e9adbd4644 /bin/bash
+[root@4a1b092875dc /]# ls
+bin  dev  etc  home  lib  lib64  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var  volueme01  volume02
+----------------------------------------------------------------
+"Mounts": [
+            {
+                "Type": "volume",
+                "Name": "cd7587e11891fc8f7981e2ede2a5c57db0036189f7e92ee6fad1b382fcf1128f",
+                "Source": "/var/lib/docker/volumes/cd7587e11891fc8f7981e2ede2a5c57db0036189f7e92ee6fad1b382fcf1128f/_data",
+                "Destination": "volueme01",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            },
+            {
+                "Type": "volume",
+                "Name": "79d18e8c5eb5aeafa8e5ff99bad33fb98dbe59a327ae39392feb2a24c9c5070f",
+                "Source": "/var/lib/docker/volumes/79d18e8c5eb5aeafa8e5ff99bad33fb98dbe59a327ae39392feb2a24c9c5070f/_data",
+                "Destination": "volume02",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+----------------------------------------------------------------
+# 查看卷挂载内容
+[root@iZ8vbdsaostzztcixyun1sZ _data]# pwd
+/var/lib/docker/volumes/cd7587e11891fc8f7981e2ede2a5c57db0036189f7e92ee6fad1b382fcf1128f/_data
+[root@iZ8vbdsaostzztcixyun1sZ _data]# ls
+inner.txt
+
+```
+
+- 1.创建一个DockerFile文件，名字随意 建议使用DockerFile
+- 2.文件中的内容指令(大写) 参数
+- 3.每个命令就是docker的一层
+
+这种方式是使用最多的，通常情况下我们会构建自己的镜像。
+
+假设构建镜像时，没有挂载卷，需要手动挂载镜像 -v 卷名:容器内的路径
+
+## 数据卷容器
+
+多个MySQL同步数据
+
+
+
+
+
+# DockerFile
+
+
+
+
+
+Docker网络
 
 
 
