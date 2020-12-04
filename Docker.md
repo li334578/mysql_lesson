@@ -1157,17 +1157,393 @@ inner.txt
 
 多个MySQL同步数据
 
+```shell
+# 启动三个容器，通过我们刚才自己写的镜像启动
+docker run -it --name cnet01 19e9adbd4644
+docker run -it --name cent02 --volumes-from cent01 19e9adbd4644
+docker run -it --name cent03 --volumes-from cent01 19e9adbd4644
+# 三个容器之间数据共享
+# cent02 cent03挂载到cent01上cent01是父容器
+# 删除cent01，cent02，cent03的文件依然可以访问
+# 备份机制
+```
 
+多个mysql数据共享
 
+```shell
+docker run -d -p 3310:3306 -v /etc/mysql/conf.d -v /var/lib/mysql -e MYSQL_ROOT_PASSWORD=654321 --name mysql01 mysql:5.7
+docker run -d -p 3310:3306 -v /etc/mysql/conf.d -v /var/lib/mysql -e MYSQL_ROOT_PASSWORD=654321 --name mysql02 --volumes-from mysql01 mysql:5.7
+```
 
+- 结论：容器之间配置信息传递，数据卷的生命周期一直持续到容器用为止。
+- 一旦持久化到本地，这个时候本地的数据是不会删除的。
 
 # DockerFile
 
+## DockerFile介绍
+
+DockerFile是用来构建docker镜像的文件，命令参数文件。
+
+构建步骤：
+
+1.编写一个DockerFile文件
+
+2.docker build 构建成一个镜像
+
+3.docker run 运行镜像
+
+4.docker push 发布镜像（发布到dockerhub、阿里云镜像仓库）
+
+## DockerFile的构建过程
+
+基础知识：
+
+1.每个保留关键字（指令）必须是大写字母
+
+2.执行必须是从上到下顺序执行
+
+3.# 表示注释
+
+4.每个指令都会创建提交一个新的镜像层
+
+docker是面向开发的，我们以后要发布项目，做镜像，就需要编写 DockerFile，这个文件十分简单。
+
+DockerFile：构建文件，定义了一切步骤
+
+DockerImages：通过DockerFile构建生成的镜像，最终要发布和运行的产品。
+
+Docker容器：容器就是镜像运行起来提供服务的
+
+## DockerFile的指令
+
+```shell
+FROM # 基础镜像
+MAINTAINER # 镜像是谁写的 姓名+邮箱
+RUN # docker镜像需要运行的命令
+ADD # 步骤：tomcat镜像，这个tomcat压缩包，添加内容
+WORKDIR # 镜像的工作目录
+VOLUME # 需要挂载到哪个位置
+EXPOSE # 暴露端口配置 类似-p
+CMD # 指定容器启动的时候要执行的命令，只有最后一个会生效，可被替代
+ENTRYPOINT # 指定容器启动的时候要执行的命令，可以追加命令
+ONBUILD # 当构建一个被继承的 DockerFile 这个时候就会运行ONBUILD的指令 触发指令
+COPY # 类似ADD,将我们的文件拷贝到我们的镜像当中。
+ENV # 构建的时候设置环境变量
+```
+
+## 实战测试 centos
+
+DockerHub中绝大多数镜像都是从`FROM scratch`开始的
+
+然后配置需要的软件来配置进行的构建。
+
+> 创建一个centos
+
+```dockerfile
+# 编写DockerFile文件
+FROM centos
+MAINTAINER lwb<liwenbo4922@163.com>
+
+ENV MYPATH /user/lcoal
+WORKDIR $MYPATH
+
+RUN yum -y install vim
+
+RUN yum -y install net-tools
+
+EXPOSE 8888
+
+CMD echo $MYPATH
+
+CMD echo "end---------"
+
+CMD /bin/bash 
+# 通过文件来构建自己的镜像
+# 命令 docker build -f myDockerFileCentos -t mycentos:0.1 .
+# Successfully built e5636cae8a5f
+# Successfully tagged mycentos:0.1
+# 测试运行
+```
+
+----------------
+
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker run -it mycentos:0.1
+[root@0466fabb141e lcoal]# ls
+[root@0466fabb141e lcoal]# pwd
+/user/lcoal
+[root@0466fabb141e lcoal]# ifconfig
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 172.17.0.4  netmask 255.255.0.0  broadcast 172.17.255.255
+        ether 02:42:ac:11:00:04  txqueuelen 0  (Ethernet)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        loop  txqueuelen 1000  (Local Loopback)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+```
+
+可以列出本地的镜像变更历史
+
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker history e5636cae8a5f
+IMAGE               CREATED             CREATED BY                                      SIZE                COMMENT
+e5636cae8a5f        6 minutes ago       /bin/sh -c #(nop)  CMD ["/bin/sh" "-c" "/bin…   0B                  
+e414338b9da1        6 minutes ago       /bin/sh -c #(nop)  CMD ["/bin/sh" "-c" "echo…   0B                  
+6bdf6ad59f99        6 minutes ago       /bin/sh -c #(nop)  CMD ["/bin/sh" "-c" "echo…   0B                  
+ca0508f38aa6        6 minutes ago       /bin/sh -c #(nop)  EXPOSE 8888                  0B                  
+d6821df1ef36        6 minutes ago       /bin/sh -c yum -y install net-tools             22.8MB              
+5c98d0b4730a        6 minutes ago       /bin/sh -c yum -y install vim                   57.3MB              
+51ac3540f015        6 minutes ago       /bin/sh -c #(nop) WORKDIR /user/lcoal           0B                  
+5695319584b8        6 minutes ago       /bin/sh -c #(nop)  ENV MYPATH=/user/lcoal       0B                  
+5e95aa7c9baa        6 minutes ago       /bin/sh -c #(nop)  MAINTAINER lwb<liwenbo492…   0B                  
+0d120b6ccaa8        3 months ago        /bin/sh -c #(nop)  CMD ["/bin/bash"]            0B                  
+<missing>           3 months ago        /bin/sh -c #(nop)  LABEL org.label-schema.sc…   0B                  
+<missing>           3 months ago        /bin/sh -c #(nop) ADD file:538afc0c5c964ce0d…   215MB 
+```
+
+```shell
+# 测试cmd命令
+# 编写DockerFile
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# cat cmdTest 
+FROM centos
+CMD ["ls","-a"]
+# 构建镜像
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker build -f cmdTest -t cmd-test .
+Sending build context to Docker daemon  3.072kB
+Step 1/2 : FROM centos
+ ---> 0d120b6ccaa8
+Step 2/2 : CMD ["ls","-a"]
+ ---> Running in 71ee996183c8
+Removing intermediate container 71ee996183c8
+ ---> 7a540c569aba
+Successfully built 7a540c569aba
+Successfully tagged cmd-test:latest
+# 执行镜像
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker run 7a540c569aba
+.
+..
+.dockerenv
+bin
+dev
+etc
+home
+lib
+lib64
+lost+found
+media
+mnt
+opt
+proc
+root
+run
+sbin
+srv
+sys
+tmp
+usr
+var
+# 追加命令 -l ls-l
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker run cmd-test -l
+docker: Error response from daemon: OCI runtime create failed: container_linux.go:349: starting container process caused "exec: \"-l\": executable file not found in $PATH": unknown.
+ERRO[0000] error waiting for container: context canceled 
+# cmd的情况下 -l 替换了CMD["ls","-a"] 报ERROR
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker run cmd-test ls -al
+total 56
+drwxr-xr-x   1 root root 4096 Dec  4 13:31 .
+drwxr-xr-x   1 root root 4096 Dec  4 13:31 ..
+-rwxr-xr-x   1 root root    0 Dec  4 13:31 .dockerenv
+lrwxrwxrwx   1 root root    7 May 11  2019 bin -> usr/bin
+drwxr-xr-x   5 root root  340 Dec  4 13:31 dev
+drwxr-xr-x   1 root root 4096 Dec  4 13:31 etc
+drwxr-xr-x   2 root root 4096 May 11  2019 home
+lrwxrwxrwx   1 root root    7 May 11  2019 lib -> usr/lib
+lrwxrwxrwx   1 root root    9 May 11  2019 lib64 -> usr/lib64
+drwx------   2 root root 4096 Aug  9 21:40 lost+found
+drwxr-xr-x   2 root root 4096 May 11  2019 media
+drwxr-xr-x   2 root root 4096 May 11  2019 mnt
+drwxr-xr-x   2 root root 4096 May 11  2019 opt
+dr-xr-xr-x 121 root root    0 Dec  4 13:31 proc
+dr-xr-x---   2 root root 4096 Aug  9 21:40 root
+drwxr-xr-x  11 root root 4096 Aug  9 21:40 run
+lrwxrwxrwx   1 root root    8 May 11  2019 sbin -> usr/sbin
+drwxr-xr-x   2 root root 4096 May 11  2019 srv
+dr-xr-xr-x  13 root root    0 Dec  4 13:31 sys
+drwxrwxrwt   7 root root 4096 Aug  9 21:40 tmp
+drwxr-xr-x  12 root root 4096 Aug  9 21:40 usr
+drwxr-xr-x  20 root root 4096 Aug  9 21:40 var
+# 可以正常执行
+```
+
+```shell
+# 测试ENTRYPOINT
+# 编写
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# cat entrypointTest 
+FROM centos
+ENTRYPOINT ["ls","-a"]
+# 构建
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker build -f entrypointTest -t en-test .
+Sending build context to Docker daemon  4.096kB
+Step 1/2 : FROM centos
+ ---> 0d120b6ccaa8
+Step 2/2 : ENTRYPOINT ["ls","-a"]
+ ---> Running in c6475b65559d
+Removing intermediate container c6475b65559d
+ ---> 664c651c3a35
+Successfully built 664c651c3a35
+Successfully tagged en-test:latest
+# 运行
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker run en-test
+.
+..
+.dockerenv
+bin
+dev
+etc
+home
+lib
+lib64
+lost+found
+media
+mnt
+opt
+proc
+root
+run
+sbin
+srv
+sys
+tmp
+usr
+var
+# 拼接参数
+[root@iZ8vbdsaostzztcixyun1sZ dockerfile]# docker run en-test -l
+total 56
+drwxr-xr-x   1 root root 4096 Dec  4 13:36 .
+drwxr-xr-x   1 root root 4096 Dec  4 13:36 ..
+-rwxr-xr-x   1 root root    0 Dec  4 13:36 .dockerenv
+lrwxrwxrwx   1 root root    7 May 11  2019 bin -> usr/bin
+drwxr-xr-x   5 root root  340 Dec  4 13:36 dev
+drwxr-xr-x   1 root root 4096 Dec  4 13:36 etc
+drwxr-xr-x   2 root root 4096 May 11  2019 home
+lrwxrwxrwx   1 root root    7 May 11  2019 lib -> usr/lib
+lrwxrwxrwx   1 root root    9 May 11  2019 lib64 -> usr/lib64
+drwx------   2 root root 4096 Aug  9 21:40 lost+found
+drwxr-xr-x   2 root root 4096 May 11  2019 media
+drwxr-xr-x   2 root root 4096 May 11  2019 mnt
+drwxr-xr-x   2 root root 4096 May 11  2019 opt
+dr-xr-xr-x 120 root root    0 Dec  4 13:36 proc
+dr-xr-x---   2 root root 4096 Aug  9 21:40 root
+drwxr-xr-x  11 root root 4096 Aug  9 21:40 run
+lrwxrwxrwx   1 root root    8 May 11  2019 sbin -> usr/sbin
+drwxr-xr-x   2 root root 4096 May 11  2019 srv
+dr-xr-xr-x  13 root root    0 Dec  4 13:31 sys
+drwxrwxrwt   7 root root 4096 Aug  9 21:40 tmp
+drwxr-xr-x  12 root root 4096 Aug  9 21:40 usr
+drwxr-xr-x  20 root root 4096 Aug  9 21:40 var
+
+```
+
+## 实战测试 tomcat
+
+1.准备镜像文件 tomcat压缩包，JDK压缩包。
+
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# ll
+total 200672
+-rw-r--r-- 1 root root  11437266 Nov 12 23:53 apache-tomcat-9.0.40.tar.gz
+-rw-r--r-- 1 root root 194042837 Dec 20  2018 jdk-8u202-linux-x64.tar.gz
+```
+
+
+
+2.编写DockerFile文件,官方命名`DockerFile`，build的时候会自动寻找这个文件，不需要手动指定了
+
+```dockerfile
+# [root@iZ8vbdsaostzztcixyun1sZ tomcat]# cat Dockerfile
+FROM centos
+MAINTAINER lwb<liwenbo4922@163.com>
+COPY readme.txt /usr/local/readme.txt
+ADD jdk-8u202-linux-x64.tar.gz /usr/local/
+ADD apache-tomcat-9.0.40.tar.gz /usr/local/
+RUN yum -y install vim
+ENV MYPATH /usr/local
+WORKDIR $MYPATH
+
+ENV JAVA_HOME /usr/local/jdk1.8.0_202
+ENV CLASSPATH $JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar
+ENV CATALINA_HOME /usr/local/apache-tomcat-9.0.40
+ENV CATALINA_BASH /usr/local/apache-tomcat-9.0.40
+ENV PATH $PATH:$JAVA_HOME/bin:$CATALINA_HOME/lib:$CATALINA_HOME/bin
+
+EXPOSE 8080
+CMD /usr/local/apache-tomcat-9.0.40/bin/startup.sh && tail -F /usr/local/apache-tomcat-9.0.40/bin/logs/catalina.out 
+```
+
+3.构建镜像
+
+`docker build -t diy-tomcat .`
+
+4.启动镜像
+
+`docker run -d -p 3356:8080 --name lwbtomcat -v /home/tomcat/test:/usr/local/apache-tomcat-9.0.40/webapps/test -v /home/tomcat/tomcalogs/:/usr/local/apache-tomcat-9.0.40/logs diy-tomcat`
+
+备注这里一定要暴露和映射8080端口，否则需要手动修改tomcat的端口文件
+
+创建文件夹WEB-INF
+
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ test]# ls
+index.html  WEB-INF
+-------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ WEB-INF]# ls
+web.xml
+```
+
+
+
+访问 `http://39.99.162.169:3356/test/`
+
+
+
+## 发布自己的镜像
 
 
 
 
-Docker网络
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Docker网络
 
 
 
