@@ -1515,85 +1515,196 @@ web.xml
 
 ## 发布自己的镜像
 
+> Docker Hub
 
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker login --help
 
+Usage:	docker login [OPTIONS] [SERVER]
 
+Log in to a Docker registry.
+If no server is specified, the default is defined by the daemon.
 
+Options:
+  -p, --password string   Password
+      --password-stdin    Take the password from stdin
+  -u, --username string   Username
+--------------------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker login -u 18737843824
+Password: 
+WARNING! Your password will be stored unencrypted in /root/.docker/config.json.
+Configure a credential helper to remove this warning. See
+https://docs.docker.com/engine/reference/commandline/login/#credentials-store
 
+Login Succeeded
+--------------------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker tag --help
 
+Usage:	docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG]
 
+Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE
+--------------------------------------------------------------------------
+# docker tag
+root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker tag 容器ID liwenbodocker/mytomcat
+--------------------------------------------------------------------------
+# docker push
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker push --help
 
+Usage:	docker push [OPTIONS] NAME[:TAG]
 
+Push an image or a repository to a registry
 
+Options:
+      --disable-content-trust   Skip image signing (default true)
+--------------------------------------------------------------------------
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker push liwenbodocker/mytomcat:latest
+The push refers to repository [docker.io/liwenbodocker/mytomcat]
+3be17d77a93a: Mounted from library/tomcat 
+a84354b89db3: Mounted from library/tomcat 
+438ec47051c4: Mounted from library/tomcat 
+94982bbe98d5: Mounted from library/tomcat 
+39341dafb261: Mounted from library/tomcat 
+4b9227ba273c: Mounted from library/tomcat 
+712264374d24: Mounted from library/tomcat 
+475b4eb79695: Mounted from library/tomcat 
+f3be340a54b9: Mounted from library/tomcat 
+114ca5b7280f: Mounted from library/tomcat 
+latest: digest: sha256:4527a552568f7d706173d8065278cd1abaa7edce186a149a5a2de251e12e6c3c size: 2421
 
+```
 
+## 总结
 
+![](http://cdn.liwenbo.cool/docker_total.png)
 
+# Docker网络（铺垫）
 
+## 理解docker0
 
+清空所有环境
 
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ ~]# docker exec -it a47e273e6de2 ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+88: eth0@if89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+# linux 能不能ping同容器内部
+```
 
+> 原理
+
+每启动一个docker容器，docker都会给docker容器分配一个ip。我们只要安装了docker，就会有一个网卡，docker0。桥接模式，使用的技术是evth-pair技术！
 
+容器带来网卡都是成对出现的
 
+evth-pair 就是一对的虚拟设备接口，他们都是成对出现的，一端连着协议，一端彼此相连。
 
+正因为有这个特性，evth-pair充当一个桥梁，连接各种虚拟网络设备的
 
+openstack, Docker容器之间的连接，ovs的连接，都是使用evth-pair技术
 
-
-
-
-
-
-# Docker网络
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+结论：tomcat01和tomcat02是共用的一个路由器，docker0
+
+所有的容器不指定网络的情况下，都是 docker0路由的， docker-会给我们的容器分配一个默认的可用IP
+
+> 小结
+
+Docker使用的是 Linux的桥接，宿主机中是一个 Dokcer容器的网桥 docker0
+
+Docker中的所有的网络接口都是虚拟的。虚拟的转发效率高！（内网传递文件！）
+只要容器删除，对应网桥一对就没了！
+
+## --link
+
+>思考一个场景，我们编写了一个微服务， database url=ip:，项目不重启，数据库jp换掉了，我们希望可以处理这个问题，可以名字来进行访问容器？
+
+```shell
+docker exec -it tomcat02 ping tomcat01
+ping:tomcato1:Name or service not known
+docker run -d ---name tomcat03 --link tomcat02 tomcat
+# 3 ping 2 ok
+# 2 ping 3 fail
+--link就是我们在 hosts配置中增加了一个 tomcat02的地址映射
+```
+
+我们现在玩 Docker已经不建议使用--link了！
+自定义网络！不适用 docker0！
+dockert0问题：他不支持容器名连接访问！
+
+## 自定义网络如何操作
+
+容器互联：
+
+```shell
+# 查看所有的docker网络
+[root@iZ8vbdsaostzztcixyun1sZ tomcat]# docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+bd7748cf0e3c        bridge              bridge              local
+8ebb64a04969        host                host                local
+df1077e6f0e7        none                null                local
+# 网络模式
+# bridge 桥接
+# none 不配置网络 默认
+# host 和宿主机共享网络
+# container 容器网络连通（用得少，局限性大)
+docker run -d -P --name tomcato1 --net bridge tomcat
+# docker0特点：默认，域名不能访问，--link可以打通连接
+docker network create --driver bridge --subnet 192 168.0.0/16--gateway 192.168.0.1 mynet
+# 启动两个容器连接到自定义网络
+docker run -d-P--name tomcat-net-01 --net mynet tomcat
+docker run -d-P--name tomcat-net-02 --net mynet tomcat
+```
+
+我们自定义的网络dcke都已经帮我们维护好了对应的关系，推荐我们平时这样使用网络！
+
+## 网络连通
+
+```shell
+[root@iZ8vbdsaostzztcixyun1sZ ~]# docker network --help
+
+Usage:	docker network COMMAND
+
+Manage networks
+
+Commands:
+  connect     Connect a container to a network
+  create      Create a network
+  disconnect  Disconnect a container from a network
+  inspect     Display detailed information on one or more networks
+  ls          List networks
+  prune       Remove all unused networks
+  rm          Remove one or more networks
+
+Run 'docker network COMMAND --help' for more information on a command.
+[root@iZ8vbdsaostzztcixyun1sZ ~]# docker network connect --help
+
+Usage:	docker network connect [OPTIONS] NETWORK CONTAINER
+
+Connect a container to a network
+
+Options:
+      --alias strings           Add network-scoped alias for the container
+      --driver-opt strings      driver options for the network
+      --ip string               IPv4 address (e.g., 172.30.100.104)
+      --ip6 string              IPv6 address (e.g., 2001:db8::33)
+      --link list               Add link to another container
+      --link-local-ip strings   Add a link-local address for the container
+# 测试打通 tomcat01- mynet连通之后就是将 tomcat01放到了 mynet网络下
+#一个容器两个ip地址！
+#阿里云服务：公网ip 私网ip
+```
+
+
+
+```dockerfile
+FROM java:8
+COPY *.jar/app.jar
+CMD ["--server.port=8080"]
+EXPOSE 8080
+ENTRYPOINT ["java","-jar","/app.jar"]
+```
